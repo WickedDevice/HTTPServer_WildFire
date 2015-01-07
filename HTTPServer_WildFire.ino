@@ -154,7 +154,7 @@ void loop() {
         if(strncmp_P(path, PSTR("/led/state"), sizeof(path)) == 0){
           // TODO: determine the MIME type from the extension  
           // for now we assume all things accessed in this way are text/html      
-          client.fastrprintln(F("Content-Type: application/jso"));                
+          client.fastrprintln(F("Content-Type: application/json"));                
           
           client.fastrprintln(F("Connection: close"));
           client.fastrprintln(F("Server: WildFire CC3000"));
@@ -203,17 +203,31 @@ void loop() {
             Serial.print("Extension: ");
             Serial.println(extension);
             
+            boolean format_is_binary = false;
             if(strncmp_P(extension,PSTR("htm"),sizeof(extension)) == 0){
               client.fastrprintln(F("Content-Type: text/html"));                   
             }             
             else if(strncmp_P(extension,PSTR("js"),sizeof(extension)) == 0){
               client.fastrprintln(F("Content-Type: text/javascript"));                   
             } 
+            else if(strncmp_P(extension,PSTR("png"),sizeof(extension)) == 0){
+              client.fastrprintln(F("Content-Type: image/png")); 
+              format_is_binary = true;
+            } 
+            else if(strncmp_P(extension,PSTR("gif"),sizeof(extension)) == 0){
+              client.fastrprintln(F("Content-Type: image/gif"));  
+              format_is_binary = true;              
+            } 
+            else if(strncmp_P(extension,PSTR("jpg"),sizeof(extension)) == 0){
+              client.fastrprintln(F("Content-Type: image/jpeg"));
+              format_is_binary = true;              
+            }
             else if(strncmp_P(extension,PSTR("css"),sizeof(extension)) == 0){
               client.fastrprintln(F("Content-Type: text/css"));                   
             }
             else if(strncmp_P(extension,PSTR("ico"),sizeof(extension)) == 0){
-              client.fastrprintln(F("Content-Type: image/vnd.microsoft.icon"));                   
+              client.fastrprintln(F("Content-Type: image/vnd.microsoft.icon"));   
+              format_is_binary = true;              
             }
             else if(strncmp_P(extension,PSTR("xml"),sizeof(extension)) == 0){
               client.fastrprintln(F("Content-Type: text/xml"));                   
@@ -228,12 +242,17 @@ void loop() {
             client.fastrprintln(F(""));            
             
             memset(buf, 0, CHUNK_SIZE + 1); // clear the buffer
-            size_t sz = 0;
+            size_t sz = 0;            
             while ((sz = file.read(buf, CHUNK_SIZE)) > 0){
               Serial.print("Read file chunk size = ");
               Serial.println(sz);
               buf[sz] = '\0';
-              client.fastrprint(buf);
+              if(format_is_binary){
+                client.write(buf, sz, 0);
+              }
+              else{
+                client.fastrprint(buf);
+              }
             }
             
             file.close();
