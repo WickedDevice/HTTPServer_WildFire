@@ -26,6 +26,7 @@ function ledStatus (arg) {
 
 $(document).ready(function(){
     //This handles all buttons. data-func value MUST be the same as function name
+    // but for that simple trade off, you get a simple handler.
     $(".actionbutton").click(function(){
         var func = $(this).data("func");
         var args = $(this).data("args");
