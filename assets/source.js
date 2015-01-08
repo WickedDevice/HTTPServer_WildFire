@@ -8,6 +8,7 @@ function lightStatus (arg) {
       }
     }
     //all the stuff about getting the status back goes here.
+    // ooh, a change.
     switch(arg){
       case "on":
         $.post("/led/on", responseHandler);
