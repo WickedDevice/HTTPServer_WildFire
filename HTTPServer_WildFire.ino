@@ -413,7 +413,7 @@ void loop() {
   if(current_millis - previous_ping_gateway_millis >= ping_gateway_interval){
     previous_ping_gateway_millis = current_millis;
     Serial.print("x");
-    uint8_t replies = cc3000.ping(gateway_ip_address, 1);
+    uint8_t replies = cc3000.ping(gateway_ip_address, 5);
     if(replies == 0){
       Serial.println("!!!!");
       Serial.flush();
