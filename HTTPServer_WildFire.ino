@@ -411,15 +411,15 @@ void loop() {
   }
 
   if(current_millis - previous_ping_gateway_millis >= ping_gateway_interval){
-    previous_ping_gateway_millis = current_millis;
     Serial.print("x");
-    uint8_t replies = cc3000.ping(gateway_ip_address, 5);
+    uint8_t replies = cc3000.ping(gateway_ip_address, 5, 200);
     if(replies == 0){
       Serial.println("!!!!");
       Serial.flush();
       wdt.force_reset(); 
     }
     Serial.println("o");
+    previous_ping_gateway_millis = current_millis;    
   }
   
 }
