@@ -2,6 +2,7 @@
 #include <WildFire.h>
 #include <WildFire_CC3000.h>
 #include <WildFire_CC3000_MDNS.h>
+#include <TinyWatchdog.h>
 #include <Flash.h>
 #include <SD.h>
 #include <ArduinoJson.h>
@@ -26,6 +27,21 @@ SdVolume volume;
 SdFile root;
 SdFile file;
 
+// if would rather just use hard wired settings and skip the smart config business
+// then comment out the #define USE_SMART_CONFIG line
+// and fill in the WLAN_SSID, WLAN_PASS, and WLAN_SECURITY settings for your network
+#define USE_SMART_CONFIG
+#ifndef USE_SMART_CONFIG
+  #define WLAN_SSID       "myNetwork"        // cannot be longer than 32 characters!
+  #define WLAN_PASS       "myPassword"
+  // Security can be WLAN_SEC_UNSEC, WLAN_SEC_WEP, WLAN_SEC_WPA or WLAN_SEC_WPA2
+  #define WLAN_SECURITY   WLAN_SEC_WPA2
+#endif
+
+// keep this around so we can ping the gateway occasionally to 
+// convince ourselves that we are still connected to the network
+uint32_t gateway_ip_address = 0;
+
 #define LISTEN_PORT           80      // What TCP port to listen on for connections.  
                                       // The HTTP protocol uses port 80 by default.
 
@@ -46,6 +62,9 @@ SdFile file;
 
 WildFire_CC3000_Server httpServer(LISTEN_PORT);
 
+#define TINY_WATCHDOG_INTERVAL (1000) // pet it once a second at most
+TinyWatchdog wdt;
+
 uint8_t buffer[BUFFER_SIZE+1];
 int bufindex = 0;
 char action[MAX_ACTION+1];
@@ -62,6 +81,9 @@ inline boolean getLedState() { return ledState; }
 void setup() {
   wf.begin();
   Serial.begin(115200);
+  wdt.begin(500, 5000);
+  cc3000.enableTinyWatchdog(14, TINY_WATCHDOG_INTERVAL);
+  
   Serial << F("Free RAM: ") << FreeRam() << "\n";
 
   pinMode(LEDPIN, OUTPUT);
@@ -86,12 +108,18 @@ void setup() {
     has_filesystem = false;
   }
 
-  Serial.print(F("Setting up the WiFi connection...\n"));
+  Serial.print(F("Setting up the WiFi connection..."));
+#ifdef USE_SMART_CONFIG
+  Serial.println(F("using Smart Config"));
   if(!attemptSmartConfigReconnect()){
     while(!attemptSmartConfigCreate()){
       Serial.println(F("Waiting for Smart Config Create"));
     }
   }
+#else
+  Serial.println(F("using Sketch Credentials"));
+  connectWithoutSmartConfig();
+#endif
 
   while(!displayConnectionDetails());
   // Start multicast DNS responder
@@ -100,14 +128,20 @@ void setup() {
     while(1);
   }
 
-
   httpServer.begin();
   Serial << F("Ready to accept HTTP requests.\n");
 }
 
+// would be better to use a proper scheduler
+uint32_t previous_tiny_watchdog_millis = 0;
+const int32_t tiny_watchdog_interval = TINY_WATCHDOG_INTERVAL;
+uint32_t previous_ping_gateway_millis = 0;
+const int32_t ping_gateway_interval = 10000; // ping the gateway every 10 seconds
+
 void loop() {
   StaticJsonBuffer<200> jsonBuffer;
   char json[256] = {0};
+  uint32_t current_millis = millis();
   
   // Try to get a client which is connected.
   WildFire_CC3000_ClientRef client = httpServer.available();
@@ -369,6 +403,25 @@ void loop() {
     Serial.println(F("Client disconnected"));
     client.close();
   }
+  
+  if(current_millis - previous_tiny_watchdog_millis >= tiny_watchdog_interval){
+    previous_tiny_watchdog_millis = current_millis;
+    wdt.pet();
+    Serial.print(".");
+  }
+
+  if(current_millis - previous_ping_gateway_millis >= ping_gateway_interval){
+    previous_ping_gateway_millis = current_millis;
+    Serial.print("x");
+    uint8_t replies = cc3000.ping(gateway_ip_address, 1);
+    if(replies == 0){
+      Serial.println("!!!!");
+      Serial.flush();
+      wdt.force_reset(); 
+    }
+    Serial.println("o");
+  }
+  
 }
 
 bool displayConnectionDetails(void) {
@@ -376,6 +429,8 @@ bool displayConnectionDetails(void) {
 
   if(!cc3000.getIPAddress(&addr, &netmask, &gateway, &dhcpserv, &dnsserv))
     return false;
+
+  gateway_ip_address = gateway;
 
   Serial.print(F("IP Addr: ")); cc3000.printIPdotsRev(addr);
   Serial.print(F("\r\nNetmask: ")); cc3000.printIPdotsRev(netmask);
@@ -416,6 +471,7 @@ boolean attemptSmartConfigCreate(void){
   Serial.println(F("\nInitialising the CC3000 ..."));
   if (!cc3000.begin(false))
   {
+    Serial.print(".");    
     return false;
   }
 
@@ -472,3 +528,22 @@ void parseFirstLine(char* line, char* action, char* path) {
   if (linepath != NULL)
     strncpy(path, linepath, MAX_PATH);
 }
+
+#ifndef USE_SMART_CONFIG
+void connectWithoutSmartConfig(void){
+  if (!cc3000.connectToAP(WLAN_SSID, WLAN_PASS, WLAN_SECURITY)) {
+    Serial.println(F("Failed!"));
+    while(1);
+  }
+
+  Serial.println(F("Connected!"));
+  
+  /* Wait for DHCP to complete */
+  Serial.println(F("Request DHCP"));
+  while (!cc3000.checkDHCP())
+  {
+    Serial.print(".");    
+    delay(100); // ToDo: Insert a DHCP timeout!
+  }     
+}
+#endif
