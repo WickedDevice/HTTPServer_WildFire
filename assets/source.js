@@ -1,4 +1,4 @@
-function ledStatus (arg) {
+function lightStatus (arg) {
     function responseHandler(data, textStatus, jqXHR){
       if(data.status == "ok"){
         $("#response").text("Light is: " + data.led);
