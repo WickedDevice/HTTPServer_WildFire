@@ -42,7 +42,7 @@ SdFile file;
 // convince ourselves that we are still connected to the network
 uint32_t gateway_ip_address = 0;
 
-#define LISTEN_PORT           80      // What TCP port to listen on for connections.  
+#define LISTEN_PORT           80    // What TCP port to listen on for connections.  
                                       // The HTTP protocol uses port 80 by default.
 
 #define MAX_ACTION            10      // Maximum length of the HTTP action that can be parsed.
@@ -411,6 +411,7 @@ void loop() {
   }
 
   if(current_millis - previous_ping_gateway_millis >= ping_gateway_interval){
+    /*
     Serial.print("x");
     uint8_t replies = cc3000.ping(gateway_ip_address, 5, 200);
     if(replies == 0){
@@ -419,7 +420,8 @@ void loop() {
       wdt.force_reset(); 
     }
     Serial.println("o");
-    previous_ping_gateway_millis = current_millis;    
+    */
+    previous_ping_gateway_millis = current_millis;        
   }
   
 }
@@ -546,4 +548,4 @@ void connectWithoutSmartConfig(void){
     delay(100); // ToDo: Insert a DHCP timeout!
   }     
 }
-#endif
+#endif/members/dashboard
