@@ -8,6 +8,8 @@
 #include <ArduinoJson.h>
 #include "utility/debug.h"
 #include "utility/socket.h"
+#include <avr/eeprom.h>  
+uint8_t * eeprom_led_state_address = (uint8_t *) 128;
 
 /****************VALUES YOU CHANGE*************/
 // The LED attached to PIN X on an Arduino board.
@@ -72,6 +74,11 @@ char path[MAX_PATH+1];
 
 
 void setLedEnabled(boolean state) {
+  // add perseistence support
+  uint8_t eeprom_led_state = eeprom_read_byte(eeprom_led_state_address);
+  if((state && eeprom_led_state != 1) || (!state && eeprom_led_state != 0)){
+    eeprom_write_byte(eeprom_led_state_address, state ? 1 : 0);
+  }
   ledState = state;
   digitalWrite(LEDPIN, ledState);
 }
@@ -84,10 +91,14 @@ void setup() {
   wdt.begin(500, 5000);
   cc3000.enableTinyWatchdog(14, TINY_WATCHDOG_INTERVAL);
   
+  // perseistence restore
+  uint8_t eeprom_led_state = eeprom_read_byte(eeprom_led_state_address);
+  ledState = (eeprom_led_state == 0) ? false : true;
+  pinMode(LEDPIN, OUTPUT);  
+  setLedEnabled(ledState);
+  
   Serial << F("Free RAM: ") << FreeRam() << "\n";
 
-  pinMode(LEDPIN, OUTPUT);
-  setLedEnabled(false);
 
   // initialize the SD card.
   Serial << F("Setting up SD card...\n");
@@ -112,6 +123,9 @@ void setup() {
 #ifdef USE_SMART_CONFIG
   Serial.println(F("using Smart Config"));
   if(!attemptSmartConfigReconnect()){
+    // TODO: This is not a good strategy
+    // once attemptSmartConfigCreate gets called
+    // the CC3000 forgets the previous Smart Config profile
     while(!attemptSmartConfigCreate()){
       Serial.println(F("Waiting for Smart Config Create"));
     }
@@ -127,6 +141,9 @@ void setup() {
     Serial.println(F("Error setting up MDNS responder!"));
     while(1);
   }
+  
+  // it seems important that we do a DNS resolve up front for some reason
+  resolveWickedDevice();
 
   httpServer.begin();
   Serial << F("Ready to accept HTTP requests.\n");
@@ -196,19 +213,25 @@ void loop() {
           client.fastrprintln(F(""));
           
           JsonObject& root = jsonBuffer.createObject();
+          root["status"] = "ok";
           if(getLedState()) {
-            root["led"] = "HIGH";
+            root["led"] = "ON";
           }
           else{
-            root["led"] = "LOW";              
+            root["led"] = "OFF";              
           }
                     
           root.printTo(json, sizeof(json));
           client.fastrprintln(json);
         } 
-        else{ // the only other possibility is it's a file on the SD card                           
+        else{ // the only other possibility is it's a file on the SD card             
           char filename[64] = {0};
-          strncpy(filename, path + 1, strlen(path) - 1); // strip off the leading slash
+          if(strncmp_P(path, PSTR("/"), sizeof(path)) == 0){          
+            strcpy_P(filename, PSTR("INDEX.HTM"));
+          }
+          else{
+            strncpy(filename, path + 1, strlen(path) - 1); // strip off the leading slash
+          }
           // TODO: Now send the response data.
           Serial.print("Attempting to open File ");
           Serial.println(filename);
@@ -238,7 +261,7 @@ void loop() {
             Serial.println(extension);
             
             boolean format_is_binary = false;
-            if(strncmp_P(extension,PSTR("htm"),sizeof(extension)) == 0){
+            if(strncmp_P(extension,PSTR("htm"),sizeof(extension)) == 0 || strcmp_P(path, PSTR("/")) == 0){
               client.fastrprintln(F("Content-Type: text/html"));                   
             }             
             else if(strncmp_P(extension,PSTR("js"),sizeof(extension)) == 0){
@@ -328,10 +351,10 @@ void loop() {
           setLedEnabled(true);      
           root["status"] = "ok";
           if(getLedState()) {
-            root["led"] = "HIGH";
+            root["led"] = "ON";
           }
           else{
-            root["led"] = "LOW";              
+            root["led"] = "OFF";              
           }              
           root.printTo(json, sizeof(json));
           Serial.print("JSON: ");
@@ -343,10 +366,10 @@ void loop() {
           setLedEnabled(false);          
           root["status"] = "ok";
          if(getLedState()) {
-            root["led"] = "HIGH";
+            root["led"] = "ON";
           }
           else{
-            root["led"] = "LOW";              
+            root["led"] = "OFF";              
           }               
           root.printTo(json, sizeof(json));
           Serial.print("JSON: ");
@@ -362,10 +385,10 @@ void loop() {
           }          
           root["status"] = "ok";
           if(getLedState()) {
-            root["led"] = "HIGH";
+            root["led"] = "ON";
           }
           else{
-            root["led"] = "LOW";              
+            root["led"] = "OFF";              
           }
           
           root.printTo(json, sizeof(json));
@@ -377,10 +400,10 @@ void loop() {
           root["status"] = "error";
           root["path"] = path;
           if(getLedState()) {
-            root["led"] = "HIGH";
+            root["led"] = "ON";
           }
           else{
-            root["led"] = "LOW";              
+            root["led"] = "OFF";              
           }          
           root.printTo(json, sizeof(json));
           Serial.print("JSON: ");
@@ -411,16 +434,24 @@ void loop() {
   }
 
   if(current_millis - previous_ping_gateway_millis >= ping_gateway_interval){
-    /*
-    Serial.print("x");
-    uint8_t replies = cc3000.ping(gateway_ip_address, 5, 200);
-    if(replies == 0){
-      Serial.println("!!!!");
+    if(!cc3000.checkConnected()){
+      Serial.println("Not Connected to Network - Restarted");
       Serial.flush();
-      wdt.force_reset(); 
+      wdt.force_reset();
+    }    
+    else{
+      Serial.println("Still Connected"); 
     }
-    Serial.println("o");
-    */
+    
+    /* Do a quick ping test on wickeddevice.com */  
+    resolveWickedDevice();
+    
+    if(gateway_ip_address != 0){
+      Serial.print(F("\n\rPinging ")); cc3000.printIPdotsRev(gateway_ip_address); Serial.print("...");  
+      uint8_t replies = cc3000.ping(gateway_ip_address, 1);
+      Serial.print(replies); Serial.println(F(" replies"));
+    }
+    
     previous_ping_gateway_millis = current_millis;        
   }
   
@@ -431,8 +462,6 @@ bool displayConnectionDetails(void) {
 
   if(!cc3000.getIPAddress(&addr, &netmask, &gateway, &dhcpserv, &dnsserv))
     return false;
-
-  gateway_ip_address = gateway;
 
   Serial.print(F("IP Addr: ")); cc3000.printIPdotsRev(addr);
   Serial.print(F("\r\nNetmask: ")); cc3000.printIPdotsRev(netmask);
@@ -548,4 +577,14 @@ void connectWithoutSmartConfig(void){
     delay(100); // ToDo: Insert a DHCP timeout!
   }     
 }
-#endif/members/dashboard
+#endif
+
+void resolveWickedDevice(void){
+  gateway_ip_address = 0;
+  Serial.print(F("www.wickeddevice.com -> "));
+  if  (!  cc3000.getHostByName("www.wickeddevice.com", &gateway_ip_address))  {
+    Serial.println(F("Couldn't resolve www.wickeddevice.com!"));
+  }    
+  cc3000.printIPdotsRev(gateway_ip_address);  
+  Serial.println();
+}
