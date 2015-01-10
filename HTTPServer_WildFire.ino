@@ -451,6 +451,24 @@ void loop() {
       uint8_t replies = cc3000.ping(gateway_ip_address, 1);
       Serial.print(replies); Serial.println(F(" replies"));
     }
+   
+    // check how many of the server's clients are "connected"   
+    uint16_t num_connected_clients = 0;
+    for(uint16_t ii = 0; ii < MAX_SERVER_CLIENTS; ii++){
+      WildFire_CC3000_ClientRef tempClient = httpServer.getClientRef(ii);
+      if( tempClient.connected() ){
+         num_connected_clients++;
+      }
+    }
+    
+    Serial.print("Num Connected Clients = ");
+    Serial.println(num_connected_clients);
+    
+    if(gateway_ip_address == 0){
+      Serial.println("CC3000 failed to resolve DNS - Restarting");
+      Serial.flush();
+      wdt.force_reset();
+    }
     
     previous_ping_gateway_millis = current_millis;        
   }
