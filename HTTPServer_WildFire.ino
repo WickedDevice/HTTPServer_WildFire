@@ -64,7 +64,7 @@ uint32_t gateway_ip_address = 0;
 
 WildFire_CC3000_Server httpServer(LISTEN_PORT);
 
-#define TINY_WATCHDOG_INTERVAL (1000) // pet it once a second at most
+#define TINY_WATCHDOG_INTERVAL (500) // pet it once a second at most
 TinyWatchdog wdt;
 
 uint8_t buffer[BUFFER_SIZE+1];
@@ -88,7 +88,7 @@ inline boolean getLedState() { return ledState; }
 void setup() {
   wf.begin();
   Serial.begin(115200);
-  wdt.begin(500, 5000);
+  wdt.begin(100, 10000);
   cc3000.enableTinyWatchdog(14, TINY_WATCHDOG_INTERVAL);
   
   // perseistence restore
@@ -502,7 +502,6 @@ boolean attemptSmartConfigCreate(void){
   Serial.println(F("\nInitialising the CC3000 ..."));
   if (!cc3000.begin(false))
   {
-    Serial.print(".");    
     return false;
   }
 
@@ -562,6 +561,14 @@ void parseFirstLine(char* line, char* action, char* path) {
 
 #ifndef USE_SMART_CONFIG
 void connectWithoutSmartConfig(void){
+  Serial.println(F("\nInitialising the CC3000 ..."));
+  if (!cc3000.begin())
+  {
+    Serial.println(F("Unable to initialise the CC3000! Check your wiring?"));
+    while(1);
+  }  
+  
+  Serial.println("Connecting to Access Point");
   if (!cc3000.connectToAP(WLAN_SSID, WLAN_PASS, WLAN_SECURITY)) {
     Serial.println(F("Failed!"));
     while(1);
@@ -573,7 +580,6 @@ void connectWithoutSmartConfig(void){
   Serial.println(F("Request DHCP"));
   while (!cc3000.checkDHCP())
   {
-    Serial.print(".");    
     delay(100); // ToDo: Insert a DHCP timeout!
   }     
 }
