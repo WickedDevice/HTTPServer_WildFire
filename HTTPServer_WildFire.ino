@@ -123,11 +123,43 @@ void setup() {
 #ifdef USE_SMART_CONFIG
   Serial.println(F("using Smart Config"));
   if(!attemptSmartConfigReconnect()){
-    // TODO: This is not a good strategy
-    // once attemptSmartConfigCreate gets called
-    // the CC3000 forgets the previous Smart Config profile
-    while(!attemptSmartConfigCreate()){
-      Serial.println(F("Waiting for Smart Config Create"));
+    boolean user_asked_for_smart_config = false;
+    Serial.println(F("Failed to reconnect with SmartConfig."));
+    Serial.println(F("Type any key + <enter> within 5 seconds to create new SmartConfig"));
+    for(uint8_t ii = 0; ii < 5; ii++){
+      for(uint8_t jj = 0; jj < 10; jj++){
+        if(jj == 0){
+          Serial.print(5 - ii);
+          Serial.print(F("..."));
+        }
+        
+        if(Serial.available() > 0){
+           delay(100); // wait a bit
+           while(Serial.available() > 0){
+             Serial.read(); // flush the input 
+           }
+           user_asked_for_smart_config = true;
+           break;
+        }
+        
+        delay(100); 
+      }
+      
+      if(user_asked_for_smart_config){
+        break; 
+      }
+    }
+    
+    if(user_asked_for_smart_config){
+      Serial.println(F("SmartConfig Requested."));
+      if(!attemptSmartConfigCreate()){
+        Serial.println(F("Forcing Reset"));
+        wdt.force_reset();
+      }      
+    }
+    else{
+      Serial.println(F("Forcing Reset"));
+      wdt.force_reset();
     }
   }
 #else
@@ -146,7 +178,8 @@ void setup() {
   resolveWickedDevice();
 
   httpServer.begin();
-  Serial << F("Ready to accept HTTP requests.\n");
+
+  Serial << millis() << F(": Ready to accept HTTP requests.\n");
 }
 
 // would be better to use a proper scheduler
@@ -420,7 +453,7 @@ void loop() {
     client.fastrprintln(F(""));
     // Wait a short period to make sure the response had time to send before
     // the connection is closed (the CC3000 sends data asyncronously).
-    delay(100);
+    delay(1000);
 
     // Close the connection when done.
     Serial.println(F("Client disconnected"));
