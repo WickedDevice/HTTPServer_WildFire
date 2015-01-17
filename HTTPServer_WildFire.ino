@@ -506,6 +506,13 @@ void loop() {
     previous_ping_gateway_millis = current_millis;        
   }
   
+  // just reset yourself if the uptime is more than 4 minutes 30 seconds = 270000ms
+  if(millis() > 270000UL){
+    Serial.println(F("Scheduled Reset..."));
+    Serial.flush();
+    wdt.force_reset();
+  }
+  
 }
 
 bool displayConnectionDetails(void) {
