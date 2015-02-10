@@ -5,10 +5,10 @@
 #include <TinyWatchdog.h>
 #include <Flash.h>
 #include <SD.h>
-#include <ArduinoJson.h>
+#include <aJSON.h>
 #include "utility/debug.h"
 #include "utility/socket.h"
-#include <avr/eeprom.h>  
+#include <avr/eeprom.h>
 uint8_t * eeprom_led_state_address = (uint8_t *) 128;
 
 /****************VALUES YOU CHANGE*************/
@@ -32,19 +32,19 @@ SdFile file;
 // if would rather just use hard wired settings and skip the smart config business
 // then comment out the #define USE_SMART_CONFIG line
 // and fill in the WLAN_SSID, WLAN_PASS, and WLAN_SECURITY settings for your network
-#define USE_SMART_CONFIG
+//#define USE_SMART_CONFIG
 #ifndef USE_SMART_CONFIG
-  #define WLAN_SSID       "myNetwork"        // cannot be longer than 32 characters!
-  #define WLAN_PASS       "myPassword"
+  #define WLAN_SSID       "SSID"        // cannot be longer than 32 characters!
+  #define WLAN_PASS       "password"
   // Security can be WLAN_SEC_UNSEC, WLAN_SEC_WEP, WLAN_SEC_WPA or WLAN_SEC_WPA2
   #define WLAN_SECURITY   WLAN_SEC_WPA2
 #endif
 
-// keep this around so we can ping the gateway occasionally to 
+// keep this around so we can ping the gateway occasionally to
 // convince ourselves that we are still connected to the network
 uint32_t gateway_ip_address = 0;
 
-#define LISTEN_PORT           80    // What TCP port to listen on for connections.  
+#define LISTEN_PORT           80    // What TCP port to listen on for connections.
                                       // The HTTP protocol uses port 80 by default.
 
 #define MAX_ACTION            10      // Maximum length of the HTTP action that can be parsed.
@@ -90,13 +90,13 @@ void setup() {
   Serial.begin(115200);
   wdt.begin(100, 10000);
   cc3000.enableTinyWatchdog(14, TINY_WATCHDOG_INTERVAL);
-  
+
   // perseistence restore
   uint8_t eeprom_led_state = eeprom_read_byte(eeprom_led_state_address);
   ledState = (eeprom_led_state == 0) ? false : true;
-  pinMode(LEDPIN, OUTPUT);  
+  pinMode(LEDPIN, OUTPUT);
   setLedEnabled(ledState);
-  
+
   Serial << F("Free RAM: ") << FreeRam() << "\n";
 
 
@@ -107,13 +107,13 @@ void setup() {
     Serial << F("card failed\n");
     has_filesystem = false;
   }
-  
+
   // initialize a FAT volume.
   if (!volume.init(&card)) {
     Serial << F("vol.init failed!\n");
     has_filesystem = false;
   }
-  
+
   if (!root.openRoot(&volume)) {
     Serial << F("openRoot failed");
     has_filesystem = false;
@@ -132,30 +132,30 @@ void setup() {
           Serial.print(5 - ii);
           Serial.print(F("..."));
         }
-        
+
         if(Serial.available() > 0){
            delay(100); // wait a bit
            while(Serial.available() > 0){
-             Serial.read(); // flush the input 
+             Serial.read(); // flush the input
            }
            user_asked_for_smart_config = true;
            break;
         }
-        
-        delay(100); 
+
+        delay(100);
       }
-      
+
       if(user_asked_for_smart_config){
-        break; 
+        break;
       }
     }
-    
+
     if(user_asked_for_smart_config){
       Serial.println(F("SmartConfig Requested."));
       if(!attemptSmartConfigCreate()){
         Serial.println(F("Forcing Reset"));
         wdt.force_reset();
-      }      
+      }
     }
     else{
       Serial.println(F("Forcing Reset"));
@@ -173,7 +173,7 @@ void setup() {
     Serial.println(F("Error setting up MDNS responder!"));
     while(1);
   }
-  
+
   // it seems important that we do a DNS resolve up front for some reason
   resolveWickedDevice();
 
@@ -189,12 +189,12 @@ uint32_t previous_ping_gateway_millis = 0;
 const int32_t ping_gateway_interval = 10000; // ping the gateway every 10 seconds
 
 void loop() {
-  StaticJsonBuffer<200> jsonBuffer;
-  char json[256] = {0};
   uint32_t current_millis = millis();
-  
+
   // Try to get a client which is connected.
+  //Serial.print("Before server available(). ");
   WildFire_CC3000_ClientRef client = httpServer.available();
+  //Serial.println(" After server available(). ");
   if (client) {
     Serial.println(F("Client connected."));
     // Process this request until it completes or times out.
@@ -203,21 +203,23 @@ void loop() {
     // Clear the incoming data buffer and point to the beginning of it.
     bufindex = 0;
     memset(&buffer, 0, sizeof(buffer));
-    
+
     // Clear action and path strings.
     memset(&action, 0, sizeof(action));
     memset(&path,   0, sizeof(path));
 
     // Set a timeout for reading all the incoming data.
     unsigned long endtime = millis() + TIMEOUT_MS;
-    
+
     // Read all the incoming data until it can be parsed or the timeout expires.
     bool parsed = false;
     while (!parsed && (millis() < endtime) && (bufindex < BUFFER_SIZE)) {
       if (client.available()) {
         buffer[bufindex++] = client.read();
       }
+      //Serial.print("Before parseReqeust.");
       parsed = parseRequest(buffer, bufindex, action, path);
+      //Serial.println(" After parseRequest.");
     }
 
     // Handle the request if it was parsed.
@@ -232,34 +234,35 @@ void loop() {
         client.fastrprintln(F("HTTP/1.1 200 OK"));
         // Then send a few headers to identify the type of data returned and that
         // the connection will not be held open.
-        
-        
+
+
         // Make an if block for each path you want to handle
         if(strncmp_P(path, PSTR("/led/state"), sizeof(path)) == 0){
-          // TODO: determine the MIME type from the extension  
-          // for now we assume all things accessed in this way are text/html      
-          client.fastrprintln(F("Content-Type: application/json"));                
-          
+          // TODO: determine the MIME type from the extension
+          // for now we assume all things accessed in this way are text/html
+          client.fastrprintln(F("Content-Type: application/json"));
+
           client.fastrprintln(F("Connection: close"));
           client.fastrprintln(F("Server: WildFire CC3000"));
           // Send an empty line to signal start of body.
           client.fastrprintln(F(""));
-          
-          JsonObject& root = jsonBuffer.createObject();
-          root["status"] = "ok";
+
+          aJsonObject *root;
+          root=aJson.createObject();
+          aJson.addStringToObject(root, "status", "ok");
           if(getLedState()) {
-            root["led"] = "ON";
+            aJson.addStringToObject(root, "led", "ON");
           }
           else{
-            root["led"] = "OFF";              
+            aJson.addStringToObject(root, "led", "OFF");
           }
-                    
-          root.printTo(json, sizeof(json));
-          client.fastrprintln(json);
-        } 
-        else{ // the only other possibility is it's a file on the SD card             
+
+          client.fastrprintln(aJson.print(root));
+          aJson.deleteItem(root);
+        }
+        else{ // the only other possibility is it's a file on the SD card
           char filename[64] = {0};
-          if(strncmp_P(path, PSTR("/"), sizeof(path)) == 0){          
+          if(strncmp_P(path, PSTR("/"), sizeof(path)) == 0){
             strcpy_P(filename, PSTR("INDEX.HTM"));
           }
           else{
@@ -271,8 +274,8 @@ void loop() {
           #define CHUNK_SIZE (256)
           char buf[CHUNK_SIZE+1] = {0};
           if (file.open(&root, filename, O_READ)) {
-            Serial.println("File opened successfully");                       
-            // determine the MIME type from the extension  
+            Serial.println("File opened successfully");
+            // determine the MIME type from the extension
             char path_copy[MAX_PATH + 1] = {0};
             strncpy(path_copy, path, MAX_PATH);
             char* extension = 0;
@@ -280,59 +283,59 @@ void loop() {
             while (token) {
               extension = token;
               token = strtok(NULL, ".");
-            }            
-            
+            }
+
             // crude tolower routine
             for(uint16_t ii = 0; ii < sizeof(extension); ii++){
               if(extension[ii] == 0) break;
               if(extension[ii] >= 'A' && extension[ii] <= 'Z'){
-                extension[ii] = extension[ii] - 'A' + 'a'; 
+                extension[ii] = extension[ii] - 'A' + 'a';
               }
             }
-            
+
             Serial.print("Extension: ");
             Serial.println(extension);
-            
+
             boolean format_is_binary = false;
             if(strncmp_P(extension,PSTR("htm"),sizeof(extension)) == 0 || strcmp_P(path, PSTR("/")) == 0){
-              client.fastrprintln(F("Content-Type: text/html"));                   
-            }             
+              client.fastrprintln(F("Content-Type: text/html"));
+            }
             else if(strncmp_P(extension,PSTR("js"),sizeof(extension)) == 0){
-              client.fastrprintln(F("Content-Type: text/javascript"));                   
-            } 
+              client.fastrprintln(F("Content-Type: text/javascript"));
+            }
             else if(strncmp_P(extension,PSTR("png"),sizeof(extension)) == 0){
-              client.fastrprintln(F("Content-Type: image/png")); 
+              client.fastrprintln(F("Content-Type: image/png"));
               format_is_binary = true;
-            } 
+            }
             else if(strncmp_P(extension,PSTR("gif"),sizeof(extension)) == 0){
-              client.fastrprintln(F("Content-Type: image/gif"));  
-              format_is_binary = true;              
-            } 
+              client.fastrprintln(F("Content-Type: image/gif"));
+              format_is_binary = true;
+            }
             else if(strncmp_P(extension,PSTR("jpg"),sizeof(extension)) == 0){
               client.fastrprintln(F("Content-Type: image/jpeg"));
-              format_is_binary = true;              
+              format_is_binary = true;
             }
             else if(strncmp_P(extension,PSTR("css"),sizeof(extension)) == 0){
-              client.fastrprintln(F("Content-Type: text/css"));                   
+              client.fastrprintln(F("Content-Type: text/css"));
             }
             else if(strncmp_P(extension,PSTR("ico"),sizeof(extension)) == 0){
-              client.fastrprintln(F("Content-Type: image/vnd.microsoft.icon"));   
-              format_is_binary = true;              
+              client.fastrprintln(F("Content-Type: image/vnd.microsoft.icon"));
+              format_is_binary = true;
             }
             else if(strncmp_P(extension,PSTR("xml"),sizeof(extension)) == 0){
-              client.fastrprintln(F("Content-Type: text/xml"));                   
-            }            
+              client.fastrprintln(F("Content-Type: text/xml"));
+            }
             else{ //if(strncmp_P(extension,PSTR("txt"),sizeof(extension)) == 0){
-              client.fastrprintln(F("Content-Type: text/plain"));                   
-            } 
-            
+              client.fastrprintln(F("Content-Type: text/plain"));
+            }
+
             client.fastrprintln(F("Connection: close"));
             client.fastrprintln(F("Server: WildFire CC3000"));
             // Send an empty line to signal start of body.
-            client.fastrprintln(F(""));            
-            
+            client.fastrprintln(F(""));
+
             memset(buf, 0, CHUNK_SIZE + 1); // clear the buffer
-            size_t sz = 0;            
+            size_t sz = 0;
             while ((sz = file.read(buf, CHUNK_SIZE)) > 0){
               Serial.print("Read file chunk size = ");
               Serial.println(sz);
@@ -344,31 +347,31 @@ void loop() {
                 client.fastrprint(buf);
               }
             }
-            
+
             file.close();
-          }        
+          }
           else{
-            client.fastrprintln(F("Content-Type: text/html"));                           
+            client.fastrprintln(F("Content-Type: text/html"));
             client.fastrprintln(F("Connection: close"));
             client.fastrprintln(F("Server: WildFire CC3000"));
             // Send an empty line to signal start of body.
-            client.fastrprintln(F(""));            
+            client.fastrprintln(F(""));
             client.fastrprintln(F("Hello world!"));
-            client.fastrprint(F("You accessed (via GET) path: ")); client.fastrprintln(path);          
-          }    
-        }          
+            client.fastrprint(F("You accessed (via GET) path: ")); client.fastrprintln(path);
+          }
+        }
       }
       else if(strcmp(action, "POST") == 0){
         // TODO: if we expect to get a JSON data structure as input
         // I think we would need to keep reading the client input at this point
         // for now, we'll take the path to contain all the relevant information
-        
+
         // Respond with the path that was accessed.
         // First send the success response code.0
         client.fastrprintln(F("HTTP/1.1 200 OK"));
         // Then send a few headers to identify the type of data returned and that
         // the connection will not be held open.
-        
+
         // NOTE: We will respond to all POST requests with JSON responses
         client.fastrprintln(F("Content-Type: application/json"));
         client.fastrprintln(F("Connection: close"));
@@ -376,73 +379,72 @@ void loop() {
         // Send an empty line to signal start of body.
         client.fastrprintln(F(""));
         // Now send the response data.
-        Serial.print(F("Got POST request to path "));  
+        Serial.print(F("Got POST request to path "));
         Serial.println(path);
-        JsonObject& root = jsonBuffer.createObject();        
-        
+
+        aJsonObject* root = aJson.createObject();
+
         if(strncmp_P(path, PSTR("/led/on"), sizeof(path)) == 0){
-          setLedEnabled(true);      
-          root["status"] = "ok";
+          setLedEnabled(true);
+          aJson.addStringToObject(root, "status", "ok");
           if(getLedState()) {
-            root["led"] = "ON";
+            aJson.addStringToObject(root, "led", "ON");
           }
           else{
-            root["led"] = "OFF";              
-          }              
-          root.printTo(json, sizeof(json));
+            aJson.addStringToObject(root, "led", "OFF");
+          }
           Serial.print("JSON: ");
-          Serial.println(json);
-          
-          client.fastrprintln(json);          
+          Serial.println(aJson.print(root));
+
+          client.fastrprintln(aJson.print(root));
         }
         else if(strncmp_P(path, PSTR("/led/off"), sizeof(path)) == 0){
-          setLedEnabled(false);          
-          root["status"] = "ok";
-         if(getLedState()) {
-            root["led"] = "ON";
+          setLedEnabled(false);
+          aJson.addStringToObject(root, "status", "ok");
+          if(getLedState()) {
+            aJson.addStringToObject(root, "led", "ON");
           }
           else{
-            root["led"] = "OFF";              
-          }               
-          root.printTo(json, sizeof(json));
+            aJson.addStringToObject(root, "led", "OFF");
+          }
           Serial.print("JSON: ");
-          Serial.println(json);          
-          client.fastrprintln(json);          
+          Serial.println(aJson.print(root));
+          client.fastrprintln(aJson.print(root));
         }
         else if(strncmp_P(path, PSTR("/led/toggle"), sizeof(path)) == 0){
           if(ledState){
-            setLedEnabled(false); 
+            setLedEnabled(false);
           }
           else{
-            setLedEnabled(true); 
-          }          
-          root["status"] = "ok";
+            setLedEnabled(true);
+          }
+          aJson.addStringToObject(root, "status", "ok");
           if(getLedState()) {
-            root["led"] = "ON";
+            aJson.addStringToObject(root, "led", "ON");
           }
           else{
-            root["led"] = "OFF";              
+            aJson.addStringToObject(root, "led", "OFF");
           }
-          
-          root.printTo(json, sizeof(json));
+
           Serial.print("JSON: ");
-          Serial.println(json);
-          client.fastrprintln(json);          
-        }        
-        else{
-          root["status"] = "error";
-          root["path"] = path;
-          if(getLedState()) {
-            root["led"] = "ON";
-          }
-          else{
-            root["led"] = "OFF";              
-          }          
-          root.printTo(json, sizeof(json));
-          Serial.print("JSON: ");
-          Serial.println(json);          
-          client.fastrprintln(json);              
+          Serial.println(aJson.print(root));
+          client.fastrprintln(aJson.print(root));
         }
+        else{
+          aJson.addStringToObject(root, "status", "error");
+          aJson.addStringToObject(root, "path", path);
+          if(getLedState()) {
+            aJson.addStringToObject(root, "led", "ON");
+          }
+          else{
+            aJson.addStringToObject(root, "led", "OFF");
+          }
+          Serial.print("JSON: ");
+          Serial.println(aJson.print(root));
+          client.fastrprintln(aJson.print(root));
+        }
+
+        aJson.deleteItem(root);
       }
       else {
         // Unsupported action, respond with an HTTP 405 method not allowed error.
@@ -459,7 +461,7 @@ void loop() {
     Serial.println(F("Client disconnected"));
     client.close();
   }
-  
+
   if(current_millis - previous_tiny_watchdog_millis >= tiny_watchdog_interval){
     previous_tiny_watchdog_millis = current_millis;
     wdt.pet();
@@ -471,21 +473,21 @@ void loop() {
       Serial.println("Not Connected to Network - Restarted");
       Serial.flush();
       wdt.force_reset();
-    }    
-    else{
-      Serial.println("Still Connected"); 
     }
-    
-    /* Do a quick ping test on wickeddevice.com */  
+    else{
+      Serial.println("Still Connected");
+    }
+
+    /* Do a quick ping test on wickeddevice.com */
     resolveWickedDevice();
-    
+
     if(gateway_ip_address != 0){
-      Serial.print(F("\n\rPinging ")); cc3000.printIPdotsRev(gateway_ip_address); Serial.print("...");  
+      Serial.print(F("\n\rPinging ")); cc3000.printIPdotsRev(gateway_ip_address); Serial.print("...");
       uint8_t replies = cc3000.ping(gateway_ip_address, 1);
       Serial.print(replies); Serial.println(F(" replies"));
     }
-   
-    // check how many of the server's clients are "connected"   
+
+    // check how many of the server's clients are "connected"
     uint16_t num_connected_clients = 0;
     for(uint16_t ii = 0; ii < MAX_SERVER_CLIENTS; ii++){
       WildFire_CC3000_ClientRef tempClient = httpServer.getClientRef(ii);
@@ -493,19 +495,19 @@ void loop() {
          num_connected_clients++;
       }
     }
-    
+
     Serial.print("Num Connected Clients = ");
     Serial.println(num_connected_clients);
-    
+
     if(gateway_ip_address == 0){
       Serial.println("CC3000 failed to resolve DNS - Restarting");
       Serial.flush();
       wdt.force_reset();
     }
-    
-    previous_ping_gateway_millis = current_millis;        
+
+    previous_ping_gateway_millis = current_millis;
   }
-  
+
 }
 
 bool displayConnectionDetails(void) {
@@ -617,8 +619,8 @@ void connectWithoutSmartConfig(void){
   {
     Serial.println(F("Unable to initialise the CC3000! Check your wiring?"));
     while(1);
-  }  
-  
+  }
+
   Serial.println("Connecting to Access Point");
   if (!cc3000.connectToAP(WLAN_SSID, WLAN_PASS, WLAN_SECURITY)) {
     Serial.println(F("Failed!"));
@@ -626,13 +628,13 @@ void connectWithoutSmartConfig(void){
   }
 
   Serial.println(F("Connected!"));
-  
+
   /* Wait for DHCP to complete */
   Serial.println(F("Request DHCP"));
   while (!cc3000.checkDHCP())
   {
     delay(100); // ToDo: Insert a DHCP timeout!
-  }     
+  }
 }
 #endif
 
@@ -641,7 +643,7 @@ void resolveWickedDevice(void){
   Serial.print(F("www.wickeddevice.com -> "));
   if  (!  cc3000.getHostByName("www.wickeddevice.com", &gateway_ip_address))  {
     Serial.println(F("Couldn't resolve www.wickeddevice.com!"));
-  }    
-  cc3000.printIPdotsRev(gateway_ip_address);  
+  }
+  cc3000.printIPdotsRev(gateway_ip_address);
   Serial.println();
 }
