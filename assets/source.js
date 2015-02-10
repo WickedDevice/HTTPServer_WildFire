@@ -1,6 +1,14 @@
 function responseHandler(data, textStatus, jqXHR){
   if(data.status == "ok"){
     $("#response").text("Light is: " + data.led);
+    $("#lighton").hide();
+    $("#lightoff").hide();
+    if(data.led == "ON"){
+      $("#lighton").show();
+    }
+    else{
+      $("#lightoff").show();
+    }
   }
   else{
     $("#response").text("Error: " + data.path);

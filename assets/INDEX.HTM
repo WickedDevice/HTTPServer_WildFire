@@ -10,10 +10,14 @@
   <script language="javascript" src="./source.js"></script>
 </head>
 <body>
+<div style="padding:5px 90px; margin: 10px; background: url('logo.png') no-repeat;">
 <p>Toggle status of WildFire LED</p>
 <button class="actionbutton btn btn-primary" data-func="lightStatus" data-args="on">LED on</button>
 <button class="actionbutton btn btn-primary" data-func="lightStatus" data-args="off">LED off</button>
 <button class="actionbutton btn btn-primary" data-func="lightStatus" data-args="toggle">Toggle LED</button>
 <div id="response">LED Status</div>
+<img style="display:none;" id="lighton" src="lighton.jpg"/>
+<img style="display:none;" id="lightoff" src="lightoff.jpg"/>
+</div>
 </body>
 </html>
